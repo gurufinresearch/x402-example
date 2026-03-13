@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>x402 Payment Demo</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --surface2: #1a1a26;
+      --border: #2a2a3a;
+      --text: #e4e4ef;
+      --text-dim: #8888a0;
+      --blue: #4f8ffc;
+      --blue-dim: #2a5ab8;
+      --green: #34d399;
+      --orange: #f59e0b;
+      --red: #ef4444;
+      --purple: #a78bfa;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 40px 24px; }
+
+    header { text-align: center; margin-bottom: 36px; }
+
+    header h1 {
+      font-size: 2rem; font-weight: 700; margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--blue), var(--purple));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    header p { color: var(--text-dim); font-size: 1rem; }
+
+    .network-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 6px 14px; font-size: 0.8rem;
+      color: var(--text-dim); margin-top: 12px;
+    }
+
+    .network-badge .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    }
+
+    .network-selector {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 6px 14px; font-size: 0.8rem;
+      color: var(--text-dim); margin-top: 12px; margin-left: 10px;
+    }
+
+    .network-selector label { color: var(--text-dim); font-size: 0.78rem; }
+
+    .network-selector select {
+      background: transparent; border: none; color: var(--text);
+      font-size: 0.8rem; padding: 0; outline: none; cursor: pointer;
+    }
+
+    /* Wallet panel */
+    .wallet-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 24px; margin-bottom: 28px;
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 12px;
+    }
+
+    .wallet-info { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+    .wallet-addr {
+      font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.88rem;
+      color: var(--text);
+    }
+
+    .wallet-balance {
+      font-size: 0.85rem; color: var(--text-dim);
+      background: var(--surface2); padding: 4px 12px; border-radius: 8px;
+    }
+
+    .wallet-balance span { color: var(--green); font-weight: 600; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 10px 20px; border-radius: 8px; border: none;
+      font-size: 0.88rem; font-weight: 500; cursor: pointer;
+      transition: all 0.2s; color: #fff; background: var(--blue);
+    }
+
+    .btn:hover { background: var(--blue-dim); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-orange { background: var(--orange); }
+    .btn-orange:hover { background: #d97706; }
+    .btn-green { background: #059669; }
+    .btn-green:hover { background: #047857; }
+
+    .btn .spinner {
+      width: 14px; height: 14px; border: 2px solid transparent;
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .no-metamask {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 40px; text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .no-metamask p { color: var(--text-dim); margin-bottom: 16px; }
+
+    .no-metamask a { color: var(--blue); text-decoration: none; }
+    .no-metamask a:hover { text-decoration: underline; }
+
+    /* Endpoint cards */
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px; margin-bottom: 36px;
+    }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px; transition: border-color 0.2s;
+    }
+
+    .card:hover { border-color: var(--blue-dim); }
+
+    .card-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .card-header h3 { font-size: 1.1rem; font-weight: 600; }
+
+    .cost-badge {
+      font-size: 0.75rem; padding: 3px 10px; border-radius: 12px;
+      background: rgba(79,143,252,0.12); color: var(--blue);
+      border: 1px solid rgba(79,143,252,0.25);
+    }
+
+    .cost-badge.free {
+      background: rgba(52,211,153,0.1); color: var(--green);
+      border-color: rgba(52,211,153,0.25);
+    }
+
+    .card-desc { color: var(--text-dim); font-size: 0.88rem; margin-bottom: 16px; }
+
+    .card-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    select {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); padding: 8px 12px;
+      font-size: 0.88rem; outline: none;
+    }
+
+    select:focus { border-color: var(--blue); }
+
+    .result-panel { margin-top: 16px; display: none; }
+    .result-panel.visible { display: block; }
+
+    .result-box {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 16px; font-family: 'SF Mono','Fira Code', monospace;
+      font-size: 0.82rem; line-height: 1.6; overflow-x: auto;
+      white-space: pre-wrap; word-break: break-all;
+    }
+
+    .result-meta { display: flex; gap: 16px; margin-bottom: 10px; flex-wrap: wrap; }
+
+    .meta-item { font-size: 0.78rem; color: var(--text-dim); }
+    .meta-item span { color: var(--text); font-weight: 500; }
+    .meta-item.success span { color: var(--green); }
+    .meta-item.error span { color: var(--red); }
+
+    .payment-receipt {
+      margin-top: 12px; padding: 12px 16px;
+      background: rgba(52,211,153,0.06);
+      border: 1px solid rgba(52,211,153,0.2); border-radius: 8px;
+    }
+
+    .payment-receipt h4 {
+      font-size: 0.8rem; color: var(--green); margin-bottom: 8px; font-weight: 600;
+    }
+
+    .payment-receipt .field {
+      display: flex; justify-content: space-between; font-size: 0.78rem; padding: 3px 0;
+    }
+
+    .payment-receipt .field .label { color: var(--text-dim); }
+
+    .payment-receipt .field .value {
+      color: var(--text); font-family: 'SF Mono','Fira Code', monospace;
+      max-width: 55%; text-align: right; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .payment-receipt .field .value a { color: var(--blue); text-decoration: none; }
+    .payment-receipt .field .value a:hover { text-decoration: underline; }
+
+    .step-indicator {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 0.78rem; color: var(--text-dim); margin-top: 8px;
+    }
+
+    .step-indicator .active { color: var(--blue); font-weight: 600; }
+
+    /* Log */
+    .log-section { margin-top: 36px; }
+
+    .log-section h2 {
+      font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; color: var(--text-dim);
+    }
+
+    .log-list {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); max-height: 320px; overflow-y: auto; padding: 4px 0;
+    }
+
+    .log-entry {
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      font-size: 0.8rem; display: flex; gap: 12px; align-items: flex-start;
+    }
+
+    .log-entry:last-child { border-bottom: none; }
+
+    .log-time {
+      color: var(--text-dim); font-family: 'SF Mono','Fira Code', monospace;
+      white-space: nowrap; font-size: 0.75rem;
+    }
+
+    .log-msg { color: var(--text); }
+    .log-msg.ok { color: var(--green); }
+    .log-msg.err { color: var(--red); }
+    .log-msg.info { color: var(--blue); }
+    .log-msg.warn { color: var(--orange); }
+
+    .empty-log {
+      color: var(--text-dim); text-align: center; padding: 24px; font-size: 0.85rem;
+    }
+    .refresh-btn {
+      margin-left: 8px;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+
+      font-size: 1.2rem;      /* bigger icon */
+      padding: 4px 6px;       /* larger click area */
+
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+
+      transition: color 0.2s, transform 0.2s;
+    }
+
+    .refresh-btn:hover {
+      color: var(--blue);
+      background: rgba(255,255,255,0.05);
+      border-radius: 6px;
+      transform: rotate(90deg);
+    }
+
+    footer {
+      text-align: center; margin-top: 48px; padding-top: 24px;
+      border-top: 1px solid var(--border); color: var(--text-dim); font-size: 0.8rem;
+    }
+
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>x402 Payment Demo</h1>
+      <p>Pay-per-request API with MetaMask &mdash; powered by Gurufin x402</p>
+      <div class="network-badge"><span class="dot"></span> <span id="network-badge-label">Gurufin Testnet</span></div>
+      <div class="network-selector">
+        <label for="network-select">Network:</label>
+        <select id="network-select" onchange="onNetworkSelectChange()">
+          <option value="guru-testnet">Gurufin Testnet</option>
+          <option value="eth-sepolia">ETH Sepolia</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- No MetaMask -->
+    <div class="no-metamask" id="no-metamask" style="display:none">
+      <p>MetaMask not detected. Install it to use this demo.</p>
+      <a href="https://metamask.io/download/" target="_blank">Install MetaMask</a>
+    </div>
+
+    <!-- Wallet Panel -->
+    <div class="wallet-panel" id="wallet-panel" style="display:none">
+      <div class="wallet-info">
+        <button class="btn" id="connect-btn" onclick="connectWallet()">Connect Wallet</button>
+        <span class="wallet-addr" id="wallet-addr"></span>
+        <span class="wallet-balance">
+          <span id="wallet-balance">KRGX: <span>--</span></span>
+          <button class="refresh-btn" onclick="refreshBalance()" title="Refresh balance">
+            ⟳
+          </button>
+        </span>
+      </div>
+      <!-- <a href="https://testnet.gurufin.com/faucet" target="_blank" class="btn btn-orange" style="font-size:0.78rem;padding:6px 14px;">Get Testnet KRGX</a> -->
+    </div>
+
+    <!-- Endpoint Cards -->
+    <div class="grid">
+      <div class="card" id="card-weather">
+        <div class="card-header">
+          <h3>Weather</h3>
+          <span class="cost-badge">₩100 KRGX</span>
+        </div>
+        <p class="card-desc">Get current weather data for a city</p>
+        <div class="card-controls">
+          <select id="weather-city">
+            <option value="San Francisco">San Francisco</option>
+            <option value="New York">New York</option>
+            <option value="London">London</option>
+            <option value="Tokyo" selected>Tokyo</option>
+            <option value="Sydney">Sydney</option>
+          </select>
+          <button class="btn" onclick="payAndFetch('weather')">
+            <span class="btn-label">Pay &amp; Fetch</span>
+          </button>
+        </div>
+        <div class="step-indicator" id="step-weather"></div>
+        <div class="result-panel" id="result-weather"></div>
+      </div>
+
+      <div class="card" id="card-joke">
+        <div class="card-header">
+          <h3>Joke</h3>
+          <span class="cost-badge">₩100 KRGX</span>
+        </div>
+        <p class="card-desc">Get a random programming/crypto joke</p>
+        <div class="card-controls">
+          <button class="btn" onclick="payAndFetch('joke')">
+            <span class="btn-label">Pay &amp; Fetch</span>
+          </button>
+        </div>
+        <div class="step-indicator" id="step-joke"></div>
+        <div class="result-panel" id="result-joke"></div>
+      </div>
+
+      <div class="card" id="card-quote">
+        <div class="card-header">
+          <h3>Quote</h3>
+          <span class="cost-badge">₩100 KRGX</span>
+        </div>
+        <p class="card-desc">Get an inspirational quote</p>
+        <div class="card-controls">
+          <button class="btn" onclick="payAndFetch('quote')">
+            <span class="btn-label">Pay &amp; Fetch</span>
+          </button>
+        </div>
+        <div class="step-indicator" id="step-quote"></div>
+        <div class="result-panel" id="result-quote"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Health Check</h3>
+          <span class="cost-badge free">Free</span>
+        </div>
+        <p class="card-desc">Check server status &mdash; no payment required</p>
+        <div class="card-controls">
+          <button class="btn btn-green" onclick="fetchFree()">
+            <span class="btn-label">Check</span>
+          </button>
+        </div>
+        <div class="result-panel" id="result-health"></div>
+      </div>
+    </div>
+
+    <!-- Transaction Log -->
+    <div class="log-section">
+      <h2>Transaction Log</h2>
+      <div class="log-list" id="log-list">
+        <div class="empty-log" id="empty-log">No transactions yet. Connect your wallet and click a button above.</div>
+      </div>
+    </div>
+
+    <footer>
+      Powered by <a href="https://github.com/gurufinresearch/x402" target="_blank">x402</a> &middot;
+      <span id="footer-network">Gurufin Testnet (eip155:631)</span> &middot; ETH Sepolia (eip155:11155111) &middot;
+      <a href="https://faucet.circle.com/" target="_blank">Faucet</a>
+    </footer>
+  </div>
+
+<script>
+// ── Network Definitions ──
+
+const NETWORKS = {
+  'guru-testnet': {
+    label:          'Gurufin Testnet',
+    caip2:          'eip155:631',
+    chainIdHex:     '0x277',
+    chainIdDec:     631,
+    chainName:      'Gurufin Testnet',
+    rpcUrls:        ['https://trpc.gurufin.io:8545'],
+    explorerUrl:    'https://tscan.gurufin.io',
+    explorerTxPath: '/transactions/',
+    nativeCurrency: { name: 'Guru Coin', symbol: 'GXN', decimals: 18 },
+    krgxAddress:    '0x1d3c04A93563eCED4570F3D8CEAfa080b3BD0B14',
+  },
+  'eth-sepolia': {
+    label:          'Ethereum Sepolia Testnet',
+    caip2:          'eip155:11155111',
+    chainIdHex:     '0xaa36a7',
+    chainIdDec:     11155111,
+    chainName:      'Ethereum Sepolia',
+    rpcUrls:        ['https://ethereum-sepolia-rpc.publicnode.com'],
+    explorerUrl:    'https://sepolia.etherscan.io',
+    explorerTxPath: '/tx/',
+    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+    krgxAddress:    '0x92718316eAC46FBe85E7F59fDda92a0CAd4144C4',
+  },
+};
+
+const USDC_DECIMALS = 6;
+const ERC20_ABI = ['function balanceOf(address) view returns (uint256)'];
+
+let provider      = null;
+let signer        = null;
+let walletAddress = null;
+let selectedNetworkKey = 'guru-testnet';
+
+function activeNetwork() {
+  return NETWORKS[selectedNetworkKey];
+}
+
+// ── Initialization ──
+
+window.addEventListener('DOMContentLoaded', async () => {
+  updateNetworkLabels();
+
+  if (!window.ethereum) {
+    document.getElementById('no-metamask').style.display = 'block';
+    return;
+  }
+  document.getElementById('wallet-panel').style.display = 'flex';
+
+  window.ethereum.on('accountsChanged', (accounts) => {
+    if (accounts.length === 0) { disconnectUI(); return; }
+    walletAddress = accounts[0];
+    updateWalletUI();
+  });
+  window.ethereum.on('chainChanged', () => {
+    // Re-create provider when MetaMask switches chain externally
+    if (walletAddress) {
+      provider = new ethers.BrowserProvider(window.ethereum);
+      provider.getSigner().then(s => { signer = s; });
+      updateWalletUI();
+    }
+  });
+
+  // Auto-reconnect if already connected
+  const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+  if (accounts.length > 0) {
+    await initProvider(accounts[0]);
+  }
+});
+
+// ── Network Selector ──
+
+function onNetworkSelectChange() {
+  selectedNetworkKey = document.getElementById('network-select').value;
+  updateNetworkLabels();
+  // If wallet is connected, switch MetaMask to the new network
+  if (walletAddress) {
+    ensureSelectedNetwork().then(() => updateWalletUI());
+  }
+}
+
+function updateNetworkLabels() {
+  const net = activeNetwork();
+  document.getElementById('network-badge-label').textContent = net.label;
+  document.getElementById('footer-network').textContent = net.label + ' (' + net.caip2 + ')';
+}
+
+// ── Wallet Connection ──
+
+async function connectWallet() {
+  try {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    await initProvider(accounts[0]);
+    addLog('Wallet connected: ' + shortAddr(walletAddress), 'ok');
+  } catch (e) {
+    addLog('Wallet connection rejected', 'err');
+  }
+}
+
+async function initProvider(account) {
+  provider = new ethers.BrowserProvider(window.ethereum);
+  signer = await provider.getSigner();
+  walletAddress = account;
+  await ensureSelectedNetwork();
+  updateWalletUI();
+}
+
+async function ensureSelectedNetwork() {
+  const net = activeNetwork();
+  const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+  if (chainId === net.chainIdHex) return;
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: net.chainIdHex }],
+    });
+  } catch (e) {
+    if (e.code === 4902) {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId:        net.chainIdHex,
+          chainName:      net.chainName,
+          nativeCurrency: net.nativeCurrency,
+          rpcUrls:        net.rpcUrls,
+          blockExplorerUrls: [net.explorerUrl],
+        }],
+      });
+    }
+  }
+  // Re-create provider after chain switch
+  provider = new ethers.BrowserProvider(window.ethereum);
+  signer = await provider.getSigner();
+}
+
+async function updateWalletUI() {
+  if (!walletAddress) return;
+  const btn = document.getElementById('connect-btn');
+  btn.textContent = shortAddr(walletAddress);
+  btn.style.background = 'var(--surface2)';
+  btn.style.border = '1px solid var(--border)';
+  btn.onclick = null;
+
+  try {
+    const net = activeNetwork();
+    const usdc = new ethers.Contract(net.krgxAddress, ERC20_ABI, provider);
+    const bal = await usdc.balanceOf(walletAddress);
+    const formatted = ethers.formatUnits(bal, USDC_DECIMALS);
+    document.getElementById('wallet-balance').innerHTML =
+      'KRGX: <span>' + parseFloat(formatted).toFixed(4) + '</span>';
+  } catch (_) {
+    document.getElementById('wallet-balance').innerHTML = 'KRGX: <span>--</span>';
+  }
+}
+
+async function refreshBalance() {
+  if (!walletAddress || !provider) return;
+
+  const btn = document.querySelector('.refresh-btn');
+  btn.style.transform = "rotate(360deg)";
+  btn.style.transition = "transform 0.4s";
+
+  try {
+    const net = activeNetwork();
+    const usdc = new ethers.Contract(net.krgxAddress, ERC20_ABI, provider);
+    const bal = await usdc.balanceOf(walletAddress);
+
+    const formatted = ethers.formatUnits(bal, USDC_DECIMALS);
+
+    document.getElementById('wallet-balance').innerHTML =
+      'KRGX: <span>' + parseFloat(formatted).toFixed(4) + '</span>';
+
+    addLog('Balance refreshed', 'info');
+  } catch (e) {
+    addLog('Failed to refresh balance', 'err');
+  }
+
+  setTimeout(() => {
+    btn.style.transform = "";
+  }, 400);
+}
+
+function disconnectUI() {
+  walletAddress = null; signer = null; provider = null;
+  const btn = document.getElementById('connect-btn');
+  btn.textContent = 'Connect Wallet';
+  btn.style.background = ''; btn.style.border = '';
+  btn.onclick = connectWallet;
+  document.getElementById('wallet-addr').textContent = '';
+  document.getElementById('wallet-balance').innerHTML = '';
+}
+
+// ── Payment Flow ──
+
+async function payAndFetch(endpoint) {
+  if (!signer) { addLog('Connect your wallet first', 'warn'); return; }
+  await ensureSelectedNetwork();
+
+  const net = activeNetwork();
+  const card = document.getElementById('card-' + endpoint);
+  const btn = card.querySelector('.btn');
+  const btnLabel = btn.querySelector('.btn-label');
+  const stepEl = document.getElementById('step-' + endpoint);
+  const resultEl = document.getElementById('result-' + endpoint);
+
+  btn.disabled = true;
+  resultEl.classList.remove('visible');
+
+  function setStep(text) { stepEl.innerHTML = text; }
+
+  try {
+    // ── Step 1: Discover payment requirements ──
+    setStep('<span class="active">Discovering payment requirements...</span>');
+    btnLabel.innerHTML = '<span class="spinner"></span> Discovering...';
+    addLog(endpoint + ': discovering payment requirements', 'info');
+
+    const path = buildPath(endpoint);
+    const discoverRes = await fetch('/api/discover?path=' + encodeURIComponent(path));
+    const paymentRequired = await discoverRes.json();
+
+    // The x402 PaymentRequired response contains an "error" field as a protocol
+    // message (e.g. "Payment required") alongside the "accepts" array.
+    // Only treat it as a real error if there are no payment options.
+    if (!paymentRequired.accepts || paymentRequired.accepts.length === 0) {
+      throw new Error(paymentRequired.error || 'No payment options returned by server');
+    }
+
+    // Find the payment option matching the user-selected network
+    const req = paymentRequired.accepts.find(a => a.network === net.caip2)
+      || paymentRequired.accepts[0];
+
+    if (req.network !== net.caip2) {
+      addLog('Selected network (' + net.caip2 + ') not offered by server; falling back to ' + req.network, 'warn');
+    }
+
+    addLog(endpoint + ': payment required — ' + req.amount + ' units on ' + req.network, 'info');
+
+    // ── Step 2: Sign with MetaMask ──
+    setStep('<span class="active">Sign payment in MetaMask...</span>');
+    btnLabel.innerHTML = '<span class="spinner"></span> Sign in MetaMask...';
+
+    const now = Math.floor(Date.now() / 1000);
+    // Back-date validAfter by 30 seconds to account for block timestamp lag
+    // and clock skew between the browser and the chain (avoids "not yet valid" errors)
+    const validAfterBuffer = 30;
+    const validBefore = now + (req.maxTimeoutSeconds || 60);
+    const nonce = ethers.hexlify(ethers.randomBytes(32));
+
+    // Use chain ID from the matched payment option's network (eip155:<chainId>)
+    const matchedChainId = parseInt(req.network.split(':')[1], 10);
+    const name    = (req.extra && req.extra.name)    || 'KRGX';
+    const version = (req.extra && req.extra.version) || '2';
+
+    const domain = {
+      name:              name,
+      version:           version,
+      chainId:           matchedChainId,
+      verifyingContract: req.asset,
+    };
+
+    const types = {
+      TransferWithAuthorization: [
+        { name: 'from',        type: 'address' },
+        { name: 'to',          type: 'address' },
+        { name: 'value',       type: 'uint256' },
+        { name: 'validAfter',  type: 'uint256' },
+        { name: 'validBefore', type: 'uint256' },
+        { name: 'nonce',       type: 'bytes32' },
+      ],
+    };
+
+    const message = {
+      from:        walletAddress,
+      to:          req.payTo,
+      value:       req.amount,
+      validAfter:  String(now - validAfterBuffer),
+      validBefore: String(validBefore),
+      nonce:       nonce,
+    };
+
+    const signature = await signer.signTypedData(domain, types, message);
+    addLog(endpoint + ': payment signed by MetaMask', 'ok');
+
+    // ── Step 3: Send payment ──
+    setStep('<span class="active">Sending payment to server...</span>');
+    btnLabel.innerHTML = '<span class="spinner"></span> Paying...';
+
+    const paymentPayload = {
+      x402Version: 2,
+      resource: paymentRequired.resource || null,
+      accepted: {
+        scheme:            req.scheme,
+        network:           req.network,
+        amount:            req.amount,
+        asset:             req.asset,
+        payTo:             req.payTo,
+        maxTimeoutSeconds: req.maxTimeoutSeconds,
+        extra:             req.extra || {},
+      },
+      payload: {
+        signature: signature,
+        authorization: {
+          from:        walletAddress,
+          to:          req.payTo,
+          value:       req.amount,
+          validAfter:  String(now - validAfterBuffer),
+          validBefore: String(validBefore),
+          nonce:       nonce,
+        },
+      },
+    };
+
+    const payRes = await fetch('/api/pay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path, paymentPayload: paymentPayload }),
+    });
+    const payData = await payRes.json();
+
+    if (payData.error) throw new Error(payData.error);
+
+    // ── Step 4: Display result ──
+    renderResult(resultEl, payData);
+    setStep('');
+
+    if (payData.payment && payData.payment.transaction) {
+      const txShort = payData.payment.transaction.slice(0, 12) + '...';
+      addLog(endpoint + ': 200 OK — paid — tx ' + txShort, 'ok');
+    } else if (payData.status === 200) {
+      addLog(endpoint + ': 200 OK (payment settled)', 'ok');
+    } else {
+      addLog(endpoint + ': status ' + payData.status, 'warn');
+    }
+
+    updateWalletUI();
+
+  } catch (e) {
+    const msg = e.message || String(e);
+    if (msg.includes('user rejected') || msg.includes('ACTION_REJECTED')) {
+      addLog(endpoint + ': signing rejected by user', 'warn');
+    } else {
+      addLog(endpoint + ': error — ' + msg, 'err');
+    }
+    resultEl.innerHTML = '<div class="result-box" style="color:var(--red);margin-top:16px">' + esc(msg) + '</div>';
+    resultEl.classList.add('visible');
+    setStep('');
+  } finally {
+    btn.disabled = false;
+    btnLabel.textContent = 'Pay & Fetch';
+  }
+}
+
+async function fetchFree() {
+  const resultEl = document.getElementById('result-health');
+  const card = resultEl.closest('.card');
+  const btn = card.querySelector('.btn');
+  const btnLabel = btn.querySelector('.btn-label');
+  btn.disabled = true;
+  btnLabel.innerHTML = '<span class="spinner"></span> Checking...';
+  resultEl.classList.remove('visible');
+
+  try {
+    const res = await fetch('/api/discover?path=/health');
+    const data = await res.json();
+    renderResult(resultEl, data);
+    addLog('health: ' + (data.status || 200) + ' OK', 'ok');
+  } catch (e) {
+    resultEl.innerHTML = '<div class="result-box" style="color:var(--red);margin-top:16px">' + esc(e.message) + '</div>';
+    resultEl.classList.add('visible');
+    addLog('health: error — ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btnLabel.textContent = 'Check';
+  }
+}
+
+// ── Helpers ──
+
+function buildPath(endpoint) {
+  if (endpoint === 'weather') {
+    const city = document.getElementById('weather-city').value;
+    return '/weather?city=' + encodeURIComponent(city);
+  }
+  return '/' + endpoint;
+}
+
+function explorerTxUrl(network, tx) {
+  // Match by CAIP-2 network identifier
+  for (const key of Object.keys(NETWORKS)) {
+    if (NETWORKS[key].caip2 === network) {
+      if (key === 'guru-testnet') {
+        tx = tx.replace('0x', '');
+      }
+      return NETWORKS[key].explorerUrl + NETWORKS[key].explorerTxPath + tx;
+    }
+  }
+  // Fallback: ETH Sepolia
+  return NETWORKS['eth-sepolia'].explorerUrl + NETWORKS['eth-sepolia'].explorerTxPath + tx;
+}
+
+function renderResult(panel, resp) {
+  let html = '<div class="result-meta">';
+  const st = resp.status || 200;
+  html += '<div class="meta-item ' + (st === 200 ? 'success' : 'error') + '">Status: <span>' + st + '</span></div>';
+  html += '</div>';
+
+  if (resp.error) {
+    html += '<div class="result-box" style="color:var(--red)">' + esc(resp.error) + '</div>';
+  } else {
+    html += '<div class="result-box">' + esc(JSON.stringify(resp.data || resp, null, 2)) + '</div>';
+  }
+
+  if (resp.payment) {
+    const p = resp.payment;
+    const tx = p.transaction || '';
+    const txShort = tx.length > 20 ? tx.slice(0, 10) + '...' + tx.slice(-8) : tx;
+    const explorer = explorerTxUrl(String(p.network || ''), tx);
+    const payer = (p.payer || '');
+    const payerShort = payer.length > 16 ? payer.slice(0, 8) + '...' + payer.slice(-6) : payer;
+
+    html += '<div class="payment-receipt"><h4>Payment Receipt</h4>';
+    if (tx) html += '<div class="field"><span class="label">Transaction</span><span class="value"><a href="' + explorer + '" target="_blank">' + txShort + '</a></span></div>';
+    html += '<div class="field"><span class="label">Network</span><span class="value">' + esc(String(p.network || '')) + '</span></div>';
+    if (payer) html += '<div class="field"><span class="label">Payer</span><span class="value">' + payerShort + '</span></div>';
+    html += '</div>';
+  }
+
+  panel.innerHTML = html;
+  panel.classList.add('visible');
+}
+
+function addLog(msg, type) {
+  const list = document.getElementById('log-list');
+  const empty = document.getElementById('empty-log');
+  if (empty) empty.remove();
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  const t = new Date().toLocaleTimeString('en-US', { hour12: false });
+  entry.innerHTML = '<span class="log-time">' + t + '</span><span class="log-msg ' + type + '">' + esc(msg) + '</span>';
+  list.prepend(entry);
+}
+
+function shortAddr(addr) {
+  if (!addr) return '';
+  return addr.slice(0, 6) + '...' + addr.slice(-4);
+}
+
+function esc(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
