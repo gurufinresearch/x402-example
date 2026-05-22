@@ -5,18 +5,25 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	x402 "github.com/gurufinresearch/x402/go"
 	x402http "github.com/gurufinresearch/x402/go/http"
 	ginmw "github.com/gurufinresearch/x402/go/http/gin"
-	evm "github.com/gurufinresearch/x402/go/mechanisms/evm/exact/server"
+	cevmcore "github.com/gurufinresearch/x402/go/mechanisms/cevm"
+	cevmserver "github.com/gurufinresearch/x402/go/mechanisms/cevm/exact/server"
+	evmserver "github.com/gurufinresearch/x402/go/mechanisms/evm/exact/server"
 	"github.com/joho/godotenv"
 )
 
 func main() {
 	godotenv.Load()
+
+	// Must be called before any cevm scheme is instantiated so that
+	// NetworkConfigs is populated for ParsePrice / EnhancePaymentRequirements.
+	registerCevmNetworkFromEnv()
 
 	payeeAddress := os.Getenv("EVM_PAYEE_ADDRESS")
 	if payeeAddress == "" {
@@ -35,9 +42,16 @@ func main() {
 		port = "4021"
 	}
 
-	// Network identifiers (CAIP-2 format)
+	// ── EVM networks (CAIP-2 eip155 format) ──────────────────────────────────
 	networkEthSepolia := x402.Network("eip155:11155111")
 	networkGuru := x402.Network("eip155:631")
+
+	// ── CEVM / Cosmos network (configurable via X402_NETWORK) ────────────────
+	networkStr := os.Getenv("X402_NETWORK")
+	if networkStr == "" {
+		networkStr = "cevm:9001"
+	}
+	networkCevm := x402.Network(networkStr)
 
 	r := gin.Default()
 
@@ -45,59 +59,26 @@ func main() {
 		URL: facilitatorURL,
 	})
 
-	// Payment-protected routes — each costs ₩100 KRGX won (Gurufin Testnet) or ₩100 KRGX won (ETH Sepolia)
+	// Each paid route accepts all three networks so clients on any chain can pay.
+	paymentOptions := x402http.PaymentOptions{
+		{Scheme: "exact", Price: "₩100", Network: networkEthSepolia, PayTo: payeeAddress},
+		{Scheme: "exact", Price: "₩100", Network: networkGuru, PayTo: payeeAddress},
+		{Scheme: "exact", Price: "₩100", Network: networkCevm, PayTo: payeeAddress},
+	}
+
 	routes := x402http.RoutesConfig{
 		"GET /weather": {
-			Accepts: x402http.PaymentOptions{
-				{
-					Scheme:  "exact",
-					Price:   "₩100",
-					Network: networkEthSepolia,
-					PayTo:   payeeAddress,
-				},
-				{
-					Scheme:  "exact",
-					Price:   "₩100",
-					Network: networkGuru,
-					PayTo:   payeeAddress,
-				},
-			},
+			Accepts:     paymentOptions,
 			Description: "Get weather data for a city",
 			MimeType:    "application/json",
 		},
 		"GET /joke": {
-			Accepts: x402http.PaymentOptions{
-				{
-					Scheme:  "exact",
-					Price:   "₩100",
-					Network: networkEthSepolia,
-					PayTo:   payeeAddress,
-				},
-				{
-					Scheme:  "exact",
-					Price:   "₩100",
-					Network: networkGuru,
-					PayTo:   payeeAddress,
-				},
-			},
+			Accepts:     paymentOptions,
 			Description: "Get a random joke",
 			MimeType:    "application/json",
 		},
 		"GET /quote": {
-			Accepts: x402http.PaymentOptions{
-				{
-					Scheme:  "exact",
-					Price:   "₩100",
-					Network: networkEthSepolia,
-					PayTo:   payeeAddress,
-				},
-				{
-					Scheme:  "exact",
-					Price:   "₩100",
-					Network: networkGuru,
-					PayTo:   payeeAddress,
-				},
-			},
+			Accepts:     paymentOptions,
 			Description: "Get an inspirational quote",
 			MimeType:    "application/json",
 		},
@@ -107,20 +88,24 @@ func main() {
 		Routes:      routes,
 		Facilitator: facilitator,
 		Schemes: []ginmw.SchemeConfig{
-			{Network: networkEthSepolia, Server: evm.NewExactEvmScheme()},
-			{Network: networkGuru, Server: evm.NewExactEvmScheme()},
+			// EVM-compatible chains
+			{Network: networkEthSepolia, Server: evmserver.NewExactEvmScheme()},
+			{Network: networkGuru, Server: evmserver.NewExactEvmScheme()},
+			// Cosmos EVM chain
+			{Network: networkCevm, Server: cevmserver.NewExactCevmScheme()},
 		},
 		Timeout: 30 * time.Second,
 	}))
 
-	// --- Free endpoints ---
+	// ── Free endpoints ────────────────────────────────────────────────────────
 
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"service": "x402 Test Website",
 			"networks": []string{
-				"Gurufin Testnet (eip155:631)",
 				"ETH Sepolia (eip155:11155111)",
+				"Gurufin Testnet EVM (eip155:631)",
+				fmt.Sprintf("Gurufin Testnet Cosmos (%s)", networkCevm),
 			},
 			"payee": payeeAddress,
 			"endpoints": []gin.H{
@@ -139,11 +124,12 @@ func main() {
 			"networks": []string{
 				string(networkEthSepolia),
 				string(networkGuru),
+				string(networkCevm),
 			},
 		})
 	})
 
-	// --- Paid endpoints ---
+	// ── Paid endpoints ────────────────────────────────────────────────────────
 
 	r.GET("/weather", func(c *gin.Context) {
 		city := c.DefaultQuery("city", "San Francisco")
@@ -177,9 +163,8 @@ func main() {
 			{"setup": "How does Ethereum say goodbye?", "punchline": "Gas you later!"},
 		}
 
-		joke := jokes[rand.Intn(len(jokes))]
 		c.JSON(http.StatusOK, gin.H{
-			"joke":      joke,
+			"joke":      jokes[rand.Intn(len(jokes))],
 			"timestamp": time.Now().Format(time.RFC3339),
 		})
 	})
@@ -193,15 +178,15 @@ func main() {
 			{"text": "The only way to do great work is to love what you do.", "author": "Steve Jobs"},
 		}
 
-		quote := quotes[rand.Intn(len(quotes))]
 		c.JSON(http.StatusOK, gin.H{
-			"quote":     quote,
+			"quote":     quotes[rand.Intn(len(quotes))],
 			"timestamp": time.Now().Format(time.RFC3339),
 		})
 	})
 
 	fmt.Printf("x402 Test Website starting on port %s\n", port)
-	fmt.Printf("  Networks:    %s (Gurufin Testnet), %s (ETH Sepolia)\n", networkGuru, networkEthSepolia)
+	fmt.Printf("  Networks:    %s (ETH Sepolia), %s (Gurufin EVM), %s (Gurufin Cosmos)\n",
+		networkEthSepolia, networkGuru, networkCevm)
 	fmt.Printf("  Payee:       %s\n", payeeAddress)
 	fmt.Printf("  Facilitator: %s\n", facilitatorURL)
 	fmt.Printf("  Endpoints:   /weather, /joke, /quote (paid) | /, /health (free)\n\n")
@@ -209,5 +194,35 @@ func main() {
 	if err := r.Run(":" + port); err != nil {
 		fmt.Printf("Failed to start server: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// registerCevmNetworkFromEnv populates cevmcore.NetworkConfigs for the Cosmos EVM scheme.
+// Must be called before cevmserver.NewExactCevmScheme() is instantiated.
+func registerCevmNetworkFromEnv() {
+	net := strings.TrimSpace(os.Getenv("X402_NETWORK"))
+	if net == "" {
+		net = "cevm:9001"
+	}
+	denom := strings.TrimSpace(os.Getenv("CEVM_DENOM"))
+	if denom == "" {
+		denom = "atest"
+	}
+	name := strings.TrimSpace(os.Getenv("CEVM_DENOM_NAME"))
+	if name == "" {
+		name = "TEST"
+	}
+	wauth := strings.TrimSpace(os.Getenv("CEVM_WAUTH_CHAIN_ID"))
+	if wauth == "" {
+		if _, suffix, err := cevmcore.ParseCosmosEVMNetwork(net); err == nil {
+			wauth = suffix
+		}
+	}
+	cevmcore.NetworkConfigs[net] = cevmcore.NetworkConfig{
+		DefaultAsset: cevmcore.AssetInfo{
+			Denom: denom,
+			Name:  name,
+		},
+		WauthChainID: wauth,
 	}
 }

@@ -30,6 +30,11 @@ func main() {
 		serverURL = "http://localhost:4021"
 	}
 
+	evmNetwork := os.Getenv("EVM_NETWORK")
+	if evmNetwork == "" {
+		evmNetwork = "eip155:631"
+	}
+
 	// Create EVM signer from private key
 	evmSigner, err := evmsigners.NewClientSignerFromPrivateKey(privateKey)
 	if err != nil {
@@ -39,7 +44,7 @@ func main() {
 
 	// Create x402 client and register EVM scheme for Gurufin Testnet
 	client := x402.Newx402Client()
-	client.Register("eip155:631", evm.NewExactEvmScheme(evmSigner))
+	client.Register(x402.Network(evmNetwork), evm.NewExactEvmScheme(evmSigner))
 
 	// Wrap standard HTTP client with automatic x402 payment handling
 	httpWrapper := x402http.Newx402HTTPClient(client)
@@ -47,7 +52,7 @@ func main() {
 
 	fmt.Println("x402 Payment Client")
 	fmt.Printf("  Server:  %s\n", serverURL)
-	fmt.Printf("  Network: Gurufin Testnet (eip155:631)\n\n")
+	fmt.Printf("  Network: Gurufin Testnet (%s)\n\n", evmNetwork)
 
 	// Test all paid endpoints
 	endpoints := []struct {

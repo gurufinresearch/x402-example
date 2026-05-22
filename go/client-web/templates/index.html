@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>x402 Payment Demo</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+  <script src="/static/wauth-sign.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -285,13 +286,14 @@
   <div class="container">
     <header>
       <h1>x402 Payment Demo</h1>
-      <p>Pay-per-request API with MetaMask &mdash; powered by Gurufin x402</p>
+      <p>Pay-per-request API with MetaMask &mdash; EVM (EIP-3009) or Cosmos native <code>x/wauth</code></p>
       <div class="network-badge"><span class="dot"></span> <span id="network-badge-label">Gurufin Testnet</span></div>
       <div class="network-selector">
         <label for="network-select">Network:</label>
         <select id="network-select" onchange="onNetworkSelectChange()">
-          <option value="guru-testnet">Gurufin Testnet</option>
-          <option value="eth-sepolia">ETH Sepolia</option>
+          <option value="guru-testnet">Gurufin Testnet (EVM)</option>
+          <option value="eth-sepolia">ETH Sepolia (EVM)</option>
+          <option value="wauth-testnet">Wauth Testnet (Cosmos native)</option>
         </select>
       </div>
     </header>
@@ -322,7 +324,7 @@
       <div class="card" id="card-weather">
         <div class="card-header">
           <h3>Weather</h3>
-          <span class="cost-badge">₩100 KRGX</span>
+          <span class="cost-badge paid-cost">₩100 KRGX</span>
         </div>
         <p class="card-desc">Get current weather data for a city</p>
         <div class="card-controls">
@@ -344,7 +346,7 @@
       <div class="card" id="card-joke">
         <div class="card-header">
           <h3>Joke</h3>
-          <span class="cost-badge">₩100 KRGX</span>
+          <span class="cost-badge paid-cost">₩100 KRGX</span>
         </div>
         <p class="card-desc">Get a random programming/crypto joke</p>
         <div class="card-controls">
@@ -359,7 +361,7 @@
       <div class="card" id="card-quote">
         <div class="card-header">
           <h3>Quote</h3>
-          <span class="cost-badge">₩100 KRGX</span>
+          <span class="cost-badge paid-cost">₩100 KRGX</span>
         </div>
         <p class="card-desc">Get an inspirational quote</p>
         <div class="card-controls">
@@ -396,7 +398,7 @@
 
     <footer>
       Powered by <a href="https://github.com/gurufinresearch/x402" target="_blank">x402</a> &middot;
-      <span id="footer-network">Gurufin Testnet (eip155:631)</span> &middot; ETH Sepolia (eip155:11155111) &middot;
+      <span id="footer-network">Gurufin Testnet (eip155:631)</span> &middot; ETH Sepolia &middot; Wauth (cevm:9001) &middot;
       <a href="https://faucet.circle.com/" target="_blank">Faucet</a>
     </footer>
   </div>
@@ -406,6 +408,7 @@
 
 const NETWORKS = {
   'guru-testnet': {
+    kind:           'evm',
     label:          'Gurufin Testnet',
     caip2:          'eip155:631',
     chainIdHex:     '0x277',
@@ -416,8 +419,11 @@ const NETWORKS = {
     explorerTxPath: '/transactions/',
     nativeCurrency: { name: 'Guru Coin', symbol: 'GXN', decimals: 18 },
     krgxAddress:    '0x1d3c04A93563eCED4570F3D8CEAfa080b3BD0B14',
+    costLabel:      '₩100 KRGX',
+    balanceLabel:   'KRGX',
   },
   'eth-sepolia': {
+    kind:           'evm',
     label:          'Ethereum Sepolia Testnet',
     caip2:          'eip155:11155111',
     chainIdHex:     '0xaa36a7',
@@ -428,6 +434,27 @@ const NETWORKS = {
     explorerTxPath: '/tx/',
     nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
     krgxAddress:    '0x92718316eAC46FBe85E7F59fDda92a0CAd4144C4',
+    costLabel:      '₩100 KRGX',
+    balanceLabel:   'KRGX',
+  },
+  'wauth-testnet': {
+    kind:           'wauth',
+    label:          'Wauth Testnet (Cosmos native)',
+    caip2:          'cevm:9001',
+    chainIdHex:     '0x2329',
+    chainIdDec:     9001,
+    chainName:      'Guru Local',
+    rpcUrls:        ['http://127.0.0.1:8545'],
+    cosmosRestUrl:  'http://127.0.0.1:1317',
+    explorerUrl:    'https://tscan.gurufin.io',
+    explorerTxPath: '/transactions/',
+    nativeCurrency: { name: 'Test Coin', symbol: 'TEST', decimals: 18 },
+    krgxAddress:    '0x0000000000000000000000000000000000000000',
+    wauthChainId:   '9001',
+    bech32Prefix:   'cosmos',
+    coinDenom:      'atest',
+    costLabel:      '100 atest',
+    balanceLabel:   'TEST',
   },
 };
 
@@ -443,10 +470,15 @@ function activeNetwork() {
   return NETWORKS[selectedNetworkKey];
 }
 
+function isWauthNetwork(net) {
+  return net && net.kind === 'wauth';
+}
+
 // ── Initialization ──
 
 window.addEventListener('DOMContentLoaded', async () => {
   updateNetworkLabels();
+  updateCostBadges();
 
   if (!window.ethereum) {
     document.getElementById('no-metamask').style.display = 'block';
@@ -480,7 +512,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 function onNetworkSelectChange() {
   selectedNetworkKey = document.getElementById('network-select').value;
   updateNetworkLabels();
-  // If wallet is connected, switch MetaMask to the new network
+  updateCostBadges();
   if (walletAddress) {
     ensureSelectedNetwork().then(() => updateWalletUI());
   }
@@ -490,6 +522,13 @@ function updateNetworkLabels() {
   const net = activeNetwork();
   document.getElementById('network-badge-label').textContent = net.label;
   document.getElementById('footer-network').textContent = net.label + ' (' + net.caip2 + ')';
+}
+
+function updateCostBadges() {
+  const label = activeNetwork().costLabel || 'paid';
+  document.querySelectorAll('.paid-cost').forEach(function (el) {
+    el.textContent = label;
+  });
 }
 
 // ── Wallet Connection ──
@@ -540,6 +579,25 @@ async function ensureSelectedNetwork() {
   signer = await provider.getSigner();
 }
 
+/** Cosmos bank module: native denom balance via REST (LCD), not ERC-20. */
+async function fetchCosmosBankBalance(restBase, bech32Addr, denom) {
+  const base = String(restBase).replace(/\/$/, '');
+  const url = base + '/cosmos/bank/v1beta1/balances/' + encodeURIComponent(bech32Addr);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('bank balances HTTP ' + res.status);
+  const data = await res.json();
+  const list = data.balances || [];
+  const hit = list.find(function (b) { return b.denom === denom; });
+  return hit ? String(hit.amount) : '0';
+}
+
+async function walletBech32ForNetwork(net) {
+  const { bech32 } = await import('https://esm.sh/bech32@2.0.0');
+  const prefix = net.bech32Prefix || 'cosmos';
+  const addrBytes = ethers.getBytes(walletAddress);
+  return bech32.encode(prefix, bech32.toWords(addrBytes));
+}
+
 async function updateWalletUI() {
   if (!walletAddress) return;
   const btn = document.getElementById('connect-btn');
@@ -548,15 +606,27 @@ async function updateWalletUI() {
   btn.style.border = '1px solid var(--border)';
   btn.onclick = null;
 
+  const net = activeNetwork();
+  const sym = net.balanceLabel || 'KRGX';
+
   try {
-    const net = activeNetwork();
-    const usdc = new ethers.Contract(net.krgxAddress, ERC20_ABI, provider);
-    const bal = await usdc.balanceOf(walletAddress);
-    const formatted = ethers.formatUnits(bal, USDC_DECIMALS);
-    document.getElementById('wallet-balance').innerHTML =
-      'KRGX: <span>' + parseFloat(formatted).toFixed(4) + '</span>';
+    if (isWauthNetwork(net)) {
+      const bech32Addr = await walletBech32ForNetwork(net);
+      const denom = net.coinDenom || 'atest';
+      const raw = await fetchCosmosBankBalance(net.cosmosRestUrl, bech32Addr, denom);
+      const dec = (net.nativeCurrency && net.nativeCurrency.decimals) || 18;
+      const formatted = ethers.formatUnits(raw, dec);
+      document.getElementById('wallet-balance').innerHTML =
+        sym + ': <span>' + parseFloat(formatted).toFixed(4) + '</span>';
+    } else {
+      const usdc = new ethers.Contract(net.krgxAddress, ERC20_ABI, provider);
+      const bal = await usdc.balanceOf(walletAddress);
+      const formatted = ethers.formatUnits(bal, USDC_DECIMALS);
+      document.getElementById('wallet-balance').innerHTML =
+        sym + ': <span>' + parseFloat(formatted).toFixed(4) + '</span>';
+    }
   } catch (_) {
-    document.getElementById('wallet-balance').innerHTML = 'KRGX: <span>--</span>';
+    document.getElementById('wallet-balance').innerHTML = sym + ': <span>--</span>';
   }
 }
 
@@ -569,15 +639,24 @@ async function refreshBalance() {
 
   try {
     const net = activeNetwork();
-    const usdc = new ethers.Contract(net.krgxAddress, ERC20_ABI, provider);
-    const bal = await usdc.balanceOf(walletAddress);
-
-    const formatted = ethers.formatUnits(bal, USDC_DECIMALS);
-
-    document.getElementById('wallet-balance').innerHTML =
-      'KRGX: <span>' + parseFloat(formatted).toFixed(4) + '</span>';
-
-    addLog('Balance refreshed', 'info');
+    const sym = net.balanceLabel || 'KRGX';
+    if (isWauthNetwork(net)) {
+      const bech32Addr = await walletBech32ForNetwork(net);
+      const denom = net.coinDenom || 'atest';
+      const raw = await fetchCosmosBankBalance(net.cosmosRestUrl, bech32Addr, denom);
+      const dec = (net.nativeCurrency && net.nativeCurrency.decimals) || 18;
+      const formatted = ethers.formatUnits(raw, dec);
+      document.getElementById('wallet-balance').innerHTML =
+        sym + ': <span>' + parseFloat(formatted).toFixed(4) + '</span>';
+      addLog('Balance refreshed (Cosmos bank / ' + denom + ')', 'info');
+    } else {
+      const usdc = new ethers.Contract(net.krgxAddress, ERC20_ABI, provider);
+      const bal = await usdc.balanceOf(walletAddress);
+      const formatted = ethers.formatUnits(bal, USDC_DECIMALS);
+      document.getElementById('wallet-balance').innerHTML =
+        sym + ': <span>' + parseFloat(formatted).toFixed(4) + '</span>';
+      addLog('Balance refreshed', 'info');
+    }
   } catch (e) {
     addLog('Failed to refresh balance', 'err');
   }
@@ -594,10 +673,255 @@ function disconnectUI() {
   btn.style.background = ''; btn.style.border = '';
   btn.onclick = connectWallet;
   document.getElementById('wallet-addr').textContent = '';
-  document.getElementById('wallet-balance').innerHTML = '';
+  const sym = (activeNetwork().balanceLabel || 'KRGX');
+  document.getElementById('wallet-balance').innerHTML = sym + ': <span>--</span>';
 }
 
 // ── Payment Flow ──
+
+/** RFC3339 UTC without fractional seconds (matches Go Truncate(time.Second) + RFC3339). */
+function toRFC3339UTC(d) {
+  const t = new Date(Math.floor(d.getTime() / 1000) * 1000);
+  const iso = t.toISOString();
+  return iso.replace(/\.\d{3}Z$/, 'Z');
+}
+
+async function signCosmosTx(ctx) {
+  if (typeof WauthSign === 'undefined') {
+    throw new Error('WauthSign not loaded (/static/wauth-sign.js)');
+  }
+  return WauthSign.signAuthorization(window.ethereum, ctx.walletAddress, ctx.authorization);
+}
+
+async function payAndFetchCosmos(endpoint, net, path, paymentRequired, req, card, btn, btnLabel, stepEl, resultEl, setStep) {
+  const acceptedBase = {
+    scheme:            req.scheme,
+    network:           req.network,
+    amount:            req.amount,
+    asset:             req.asset,
+    payTo:             req.payTo,
+    maxTimeoutSeconds: req.maxTimeoutSeconds,
+    extra:             req.extra || {},
+  };
+
+  setStep('<span class="active">Confirm wallet & nonce in MetaMask...</span>');
+  btnLabel.innerHTML = '<span class="spinner"></span> Confirm...';
+
+  await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+  const { bech32 } = await import('https://esm.sh/bech32@2.0.0');
+  const prefix = net.bech32Prefix || 'cosmos';
+  const fromBech32 = bech32.encode(prefix, bech32.toWords(ethers.getBytes(walletAddress)));
+
+  let payToRaw = (req.payTo && String(req.payTo).trim()) || '';
+  if (!payToRaw && req.extra && req.extra.payToBech32) {
+    payToRaw = String(req.extra.payToBech32).trim();
+  }
+  let payToBech32;
+  if (!payToRaw) {
+    throw new Error('wauth requires payTo (bech32 or 0x EVM address)');
+  }
+  if (payToRaw.startsWith('0x') || payToRaw.startsWith('0X')) {
+    payToBech32 = bech32.encode(prefix, bech32.toWords(ethers.getBytes(payToRaw)));
+  } else {
+    payToBech32 = payToRaw;
+    if (payToBech32.indexOf('1') < 0) {
+      throw new Error('wauth payTo must be bech32 or 0x EVM address');
+    }
+  }
+
+  const denom = (req.extra && req.extra.denom) || net.coinDenom || 'atest';
+  const coinsStr = String(req.amount) + denom;
+  const wauthChainId = (req.extra && (req.extra.wauthChainId || req.extra.chainId)) || net.wauthChainId || '9001';
+
+  const nonce32 = new Uint8Array(32);
+  crypto.getRandomValues(nonce32);
+
+  const bindMessage =
+    'x402 wauth sender + nonce\n' +
+    'address: ' + walletAddress + '\n' +
+    'nonce: 0x' +
+    Array.from(nonce32, function (b) {
+      return b.toString(16).padStart(2, '0');
+    }).join('');
+  try {
+    await window.ethereum.request({
+      method: 'personal_sign',
+      params: [bindMessage, walletAddress],
+    });
+  } catch (e) {
+    throw new Error(e.message || String(e));
+  }
+
+  const skewSec = 3;
+  const windowSec = 60;
+  const t0 = Math.floor(Date.now() / 1000) * 1000;
+  const validAfter = new Date(t0 - skewSec * 1000);
+  const validBefore = new Date(t0 + windowSec * 1000);
+
+  const nonceHex = Array.from(nonce32, function (b) {
+    return b.toString(16).padStart(2, '0');
+  }).join('');
+
+  const authorization = {
+    from:         fromBech32,
+    to:           payToBech32,
+    coins:        coinsStr,
+    nonce:        nonceHex,
+    valid_after:  toRFC3339UTC(validAfter),
+    valid_before: toRFC3339UTC(validBefore),
+    chain_id:     String(wauthChainId),
+    memo:         (req.extra && req.extra.memo) || '',
+  };
+
+  const sigHexLower = await signCosmosTx({
+    acceptedBase: acceptedBase,
+    net:            net,
+    req:            req,
+    walletAddress:  walletAddress,
+    fromBech32:     fromBech32,
+    payToBech32:    payToBech32,
+    coinsStr:       coinsStr,
+    nonce32:        nonce32,
+    nonceHex:       nonceHex,
+    validAfter:     validAfter,
+    validBefore:    validBefore,
+    wauthChainId:   String(wauthChainId),
+    authorization:  authorization,
+  });
+
+  addLog(endpoint + ': wauth payload ready', 'ok');
+
+  const paymentPayload = {
+    x402Version: 2,
+    resource: paymentRequired.resource || null,
+    accepted: acceptedBase,
+    payload: {
+      signature:     sigHexLower,
+      authorization: authorization,
+    },
+  };
+
+  setStep('<span class="active">Sending payment to server...</span>');
+  btnLabel.innerHTML = '<span class="spinner"></span> Paying...';
+
+  const payRes = await fetch('/api/pay', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: path, paymentPayload: paymentPayload }),
+  });
+  const payData = await payRes.json();
+
+  renderResult(resultEl, payData);
+  setStep('');
+
+  if (payData.error) {
+    addLog(endpoint + ': error — ' + payData.error, 'err');
+    return;
+  }
+
+  if (payData.payment && payData.payment.transaction) {
+    const txShort = payData.payment.transaction.slice(0, 12) + '...';
+    addLog(endpoint + ': 200 OK — paid — tx ' + txShort, 'ok');
+  } else if (payData.status === 200) {
+    addLog(endpoint + ': 200 OK (payment settled)', 'ok');
+  } else {
+    addLog(endpoint + ': status ' + payData.status, 'warn');
+  }
+}
+
+async function payAndFetchEvm(endpoint, net, path, paymentRequired, req, card, btn, btnLabel, stepEl, resultEl, setStep) {
+  setStep('<span class="active">Sign payment in MetaMask...</span>');
+  btnLabel.innerHTML = '<span class="spinner"></span> Sign in MetaMask...';
+
+  const now = Math.floor(Date.now() / 1000);
+  const validAfterBuffer = 30;
+  const validBefore = now + (req.maxTimeoutSeconds || 60);
+  const nonce = ethers.hexlify(ethers.randomBytes(32));
+
+  const matchedChainId = parseInt(req.network.split(':')[1], 10);
+  const name    = (req.extra && req.extra.name)    || 'KRGX';
+  const version = (req.extra && req.extra.version) || '2';
+
+  const domain = {
+    name:              name,
+    version:           version,
+    chainId:           matchedChainId,
+    verifyingContract: req.asset,
+  };
+
+  const types = {
+    TransferWithAuthorization: [
+      { name: 'from',        type: 'address' },
+      { name: 'to',          type: 'address' },
+      { name: 'value',       type: 'uint256' },
+      { name: 'validAfter',  type: 'uint256' },
+      { name: 'validBefore', type: 'uint256' },
+      { name: 'nonce',       type: 'bytes32' },
+    ],
+  };
+
+  const message = {
+    from:        walletAddress,
+    to:          req.payTo,
+    value:       req.amount,
+    validAfter:  String(now - validAfterBuffer),
+    validBefore: String(validBefore),
+    nonce:       nonce,
+  };
+
+  const signature = await signer.signTypedData(domain, types, message);
+  addLog(endpoint + ': payment signed by MetaMask (EIP-3009)', 'ok');
+
+  setStep('<span class="active">Sending payment to server...</span>');
+  btnLabel.innerHTML = '<span class="spinner"></span> Paying...';
+
+  const paymentPayload = {
+    x402Version: 2,
+    resource: paymentRequired.resource || null,
+    accepted: {
+      scheme:            req.scheme,
+      network:           req.network,
+      amount:            req.amount,
+      asset:             req.asset,
+      payTo:             req.payTo,
+      maxTimeoutSeconds: req.maxTimeoutSeconds,
+      extra:             req.extra || {},
+    },
+    payload: {
+      signature: signature,
+      authorization: {
+        from:        walletAddress,
+        to:          req.payTo,
+        value:       req.amount,
+        validAfter:  String(now - validAfterBuffer),
+        validBefore: String(validBefore),
+        nonce:       nonce,
+      },
+    },
+  };
+
+  const payRes = await fetch('/api/pay', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: path, paymentPayload: paymentPayload }),
+  });
+  const payData = await payRes.json();
+
+  if (payData.error) throw new Error(payData.error);
+
+  renderResult(resultEl, payData);
+  setStep('');
+
+  if (payData.payment && payData.payment.transaction) {
+    const txShort = payData.payment.transaction.slice(0, 12) + '...';
+    addLog(endpoint + ': 200 OK — paid — tx ' + txShort, 'ok');
+  } else if (payData.status === 200) {
+    addLog(endpoint + ': 200 OK (payment settled)', 'ok');
+  } else {
+    addLog(endpoint + ': status ' + payData.status, 'warn');
+  }
+}
 
 async function payAndFetch(endpoint) {
   if (!signer) { addLog('Connect your wallet first', 'warn'); return; }
@@ -642,101 +966,10 @@ async function payAndFetch(endpoint) {
 
     addLog(endpoint + ': payment required — ' + req.amount + ' units on ' + req.network, 'info');
 
-    // ── Step 2: Sign with MetaMask ──
-    setStep('<span class="active">Sign payment in MetaMask...</span>');
-    btnLabel.innerHTML = '<span class="spinner"></span> Sign in MetaMask...';
-
-    const now = Math.floor(Date.now() / 1000);
-    // Back-date validAfter by 30 seconds to account for block timestamp lag
-    // and clock skew between the browser and the chain (avoids "not yet valid" errors)
-    const validAfterBuffer = 30;
-    const validBefore = now + (req.maxTimeoutSeconds || 60);
-    const nonce = ethers.hexlify(ethers.randomBytes(32));
-
-    // Use chain ID from the matched payment option's network (eip155:<chainId>)
-    const matchedChainId = parseInt(req.network.split(':')[1], 10);
-    const name    = (req.extra && req.extra.name)    || 'KRGX';
-    const version = (req.extra && req.extra.version) || '2';
-
-    const domain = {
-      name:              name,
-      version:           version,
-      chainId:           matchedChainId,
-      verifyingContract: req.asset,
-    };
-
-    const types = {
-      TransferWithAuthorization: [
-        { name: 'from',        type: 'address' },
-        { name: 'to',          type: 'address' },
-        { name: 'value',       type: 'uint256' },
-        { name: 'validAfter',  type: 'uint256' },
-        { name: 'validBefore', type: 'uint256' },
-        { name: 'nonce',       type: 'bytes32' },
-      ],
-    };
-
-    const message = {
-      from:        walletAddress,
-      to:          req.payTo,
-      value:       req.amount,
-      validAfter:  String(now - validAfterBuffer),
-      validBefore: String(validBefore),
-      nonce:       nonce,
-    };
-
-    const signature = await signer.signTypedData(domain, types, message);
-    addLog(endpoint + ': payment signed by MetaMask', 'ok');
-
-    // ── Step 3: Send payment ──
-    setStep('<span class="active">Sending payment to server...</span>');
-    btnLabel.innerHTML = '<span class="spinner"></span> Paying...';
-
-    const paymentPayload = {
-      x402Version: 2,
-      resource: paymentRequired.resource || null,
-      accepted: {
-        scheme:            req.scheme,
-        network:           req.network,
-        amount:            req.amount,
-        asset:             req.asset,
-        payTo:             req.payTo,
-        maxTimeoutSeconds: req.maxTimeoutSeconds,
-        extra:             req.extra || {},
-      },
-      payload: {
-        signature: signature,
-        authorization: {
-          from:        walletAddress,
-          to:          req.payTo,
-          value:       req.amount,
-          validAfter:  String(now - validAfterBuffer),
-          validBefore: String(validBefore),
-          nonce:       nonce,
-        },
-      },
-    };
-
-    const payRes = await fetch('/api/pay', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: path, paymentPayload: paymentPayload }),
-    });
-    const payData = await payRes.json();
-
-    if (payData.error) throw new Error(payData.error);
-
-    // ── Step 4: Display result ──
-    renderResult(resultEl, payData);
-    setStep('');
-
-    if (payData.payment && payData.payment.transaction) {
-      const txShort = payData.payment.transaction.slice(0, 12) + '...';
-      addLog(endpoint + ': 200 OK — paid — tx ' + txShort, 'ok');
-    } else if (payData.status === 200) {
-      addLog(endpoint + ': 200 OK (payment settled)', 'ok');
+    if (isWauthNetwork(net)) {
+      await payAndFetchCosmos(endpoint, net, path, paymentRequired, req, card, btn, btnLabel, stepEl, resultEl, setStep);
     } else {
-      addLog(endpoint + ': status ' + payData.status, 'warn');
+      await payAndFetchEvm(endpoint, net, path, paymentRequired, req, card, btn, btnLabel, stepEl, resultEl, setStep);
     }
 
     updateWalletUI();
@@ -792,16 +1025,15 @@ function buildPath(endpoint) {
 }
 
 function explorerTxUrl(network, tx) {
-  // Match by CAIP-2 network identifier
   for (const key of Object.keys(NETWORKS)) {
     if (NETWORKS[key].caip2 === network) {
-      if (key === 'guru-testnet') {
-        tx = tx.replace('0x', '');
+      let hash = String(tx || '');
+      if (key === 'guru-testnet' || NETWORKS[key].kind === 'wauth') {
+        hash = hash.replace(/^0x/i, '');
       }
-      return NETWORKS[key].explorerUrl + NETWORKS[key].explorerTxPath + tx;
+      return NETWORKS[key].explorerUrl + NETWORKS[key].explorerTxPath + hash;
     }
   }
-  // Fallback: ETH Sepolia
   return NETWORKS['eth-sepolia'].explorerUrl + NETWORKS['eth-sepolia'].explorerTxPath + tx;
 }
 

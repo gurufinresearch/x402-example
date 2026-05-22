@@ -13,7 +13,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-//go:embed templates/index.html
+//go:embed templates/index.html static/wauth-sign.js
 var templatesFS embed.FS
 
 var serverURL string
@@ -33,6 +33,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleIndex)
+	mux.HandleFunc("/static/wauth-sign.js", handleWauthSignJS)
 	mux.HandleFunc("/api/discover", handleDiscover)
 	mux.HandleFunc("/api/pay", handlePay)
 
@@ -56,6 +57,16 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmpl.Execute(w, nil)
+}
+
+func handleWauthSignJS(w http.ResponseWriter, r *http.Request) {
+	b, err := templatesFS.ReadFile("static/wauth-sign.js")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Write(b)
 }
 
 // handleDiscover proxies a request to the x402 server without payment.
@@ -154,6 +165,27 @@ func handlePay(w http.ResponseWriter, r *http.Request) {
 	var data interface{}
 	if json.Unmarshal(body, &data) == nil {
 		result["data"] = data
+		if m, ok := data.(map[string]interface{}); ok {
+			if es, ok := m["error"].(string); ok && es != "" {
+				result["error"] = es
+			}
+		}
+	}
+
+	// x402 verify / requirement failures may appear in PAYMENT-REQUIRED (base64 JSON).
+	prB64 := resp.Header.Get("PAYMENT-REQUIRED")
+	if prB64 == "" {
+		prB64 = resp.Header.Get("X-PAYMENT-REQUIRED")
+	}
+	if prB64 != "" {
+		if raw, err := base64.StdEncoding.DecodeString(prB64); err == nil {
+			var pr map[string]interface{}
+			if json.Unmarshal(raw, &pr) == nil {
+				if es, ok := pr["error"].(string); ok && es != "" {
+					result["error"] = es
+				}
+			}
+		}
 	}
 
 	// Extract payment settlement receipt
@@ -163,9 +195,14 @@ func handlePay(w http.ResponseWriter, r *http.Request) {
 	}
 	if paymentHeader != "" {
 		if decoded, err := base64.StdEncoding.DecodeString(paymentHeader); err == nil {
-			var settle interface{}
+			var settle map[string]interface{}
 			if json.Unmarshal(decoded, &settle) == nil {
 				result["payment"] = settle
+				if succ, ok := settle["success"].(bool); ok && !succ {
+					if es, ok := settle["errorReason"].(string); ok && es != "" {
+						result["error"] = es
+					}
+				}
 			}
 		}
 	}
